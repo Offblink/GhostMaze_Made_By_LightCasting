@@ -88,7 +88,8 @@ COLORS_LEVEL1 = {
     'exit': (0, 255, 100),        # 出口颜色保持不变
     'exit_wall': (50, 200, 100),
     'trigger_zone': (255, 200, 0, 100),
-    'sky': (135, 206, 235),       # 天蓝色
+    'sky_top': (135, 206, 235),       # 天蓝色顶部（修改）
+    'sky_bottom': (240, 248, 255),    # 淡蓝色底部（修改）
     'floor': (34, 139, 34),       # 森林绿
     'ray': (255, 200, 100, 100),
     'text': (220, 220, 240),
@@ -115,7 +116,8 @@ COLORS_LEVEL2 = {
     'exit': (0, 255, 100),        # 出口颜色保持不变
     'exit_wall': (50, 200, 100),
     'trigger_zone': (255, 180, 0, 100),
-    'sky': (100, 150, 200),       # 灰蓝色
+    'sky_top': (100, 150, 200),       # 灰蓝色顶部（修改）
+    'sky_bottom': (180, 200, 220),    # 浅灰蓝色底部（修改）
     'floor': (20, 100, 20),       # 暗绿色
     'ray': (255, 180, 80, 100),
     'text': (200, 200, 220),
@@ -142,7 +144,8 @@ COLORS_LEVEL3 = {
     'exit': (0, 255, 100),        # 出口颜色保持不变
     'exit_wall': (50, 200, 100),
     'trigger_zone': (255, 160, 0, 100),
-    'sky': (50, 70, 100),         # 深灰蓝
+    'sky_top': (50, 70, 100),        # 深灰蓝顶部（修改）
+    'sky_bottom': (100, 120, 150),   # 中灰蓝底部（修改）
     'floor': (10, 50, 10),        # 深绿色
     'ray': (255, 160, 60, 100),
     'text': (180, 180, 200),
@@ -157,6 +160,7 @@ COLORS_LEVEL3 = {
     'map': (30, 160, 215),        # 新增：地图道具颜色
     'map_ui': (60, 180, 235),     # 新增：地图UI颜色
 }
+
 
 # 关卡颜色列表，便于按索引访问
 LEVEL_COLORS = [COLORS_LEVEL1, COLORS_LEVEL2, COLORS_LEVEL3]
@@ -573,8 +577,7 @@ class AStarPathfinder:
         return []
 
 class Ghost:
-    """幽灵怪物类 - 支持多关卡不同贴图"""
-    
+    """幽灵怪物类 - 支持多关卡不同贴图及第一关四向显示"""
     def __init__(self, maze_width, maze_height, maze_grid, level_index=0):
         self.radius = 0.4
         self.width_3d = 0.8
@@ -586,42 +589,56 @@ class Ghost:
         # 根据关卡索引获取颜色
         self.color = LEVEL_COLORS[level_index]['ghost']
         
+        # === 新增：幽灵朝向属性 ===
+        self.facing_angle = random.uniform(0, 2 * math.pi)  # 初始随机朝向（弧度）
+        
         # 2D视图参数
         self.pixel_size = 8
-        
+
         # 3D视图参数
         self.base_3d_size = 800
         self.scale_3d = 100
-        
+
         # 移动和追踪参数 - 根据关卡设置追踪半径
         self.chase_radius = LEVEL_GHOST_CHASE_RADIUS[level_index]
         self.slow_speed = 0.03 # 游走速度
         self.fast_speed = 0.05 # 追踪速度
         self.current_speed = self.slow_speed
+        
         self.maze_grid = maze_grid
         
         # A*寻路器
         self.pathfinder = AStarPathfinder(maze_grid)
         
         # 路径追踪参数
-        self.current_path = []  # 当前要跟随的路径
-        self.current_target = None  # 当前目标位置
-        self.path_index = 0  # 当前路径索引
-        self.repath_timer = 0  # 重新寻路计时器
-        self.repath_interval = 5000  # 重新寻路间隔（毫秒）
+        self.current_path = [] # 当前要跟随的路径
+        self.current_target = None # 当前目标位置
+        self.path_index = 0 # 当前路径索引
+        self.repath_timer = 0 # 重新寻路计时器
+        self.repath_interval = 5000 # 重新寻路间隔（毫秒）
         
         # 随机游走参数
-        self.walk_state = "random"  # 状态: "random"（随机游走）或 "chase"（追踪玩家）
+        self.walk_state = "random" # 状态: "random"（随机游走）或 "chase"（追踪玩家）
         self.random_target_timer = 0
-        self.random_target_interval = 3000  # 随机目标更新间隔（毫秒）
+        self.random_target_interval = 3000 # 随机目标更新间隔（毫秒）
         
         # 生成幽灵像素画
         self.sprite_2d = self._create_ghost_sprite_2d()
-        self.sprite_3d_colors = self._load_ghost_sprite_3d()
         
-        # 预处理原始表面
-        self.original_surface = None
+        # === 修改：加载贴图（区分第一关和其他关卡） ===
+        if self.level_index == 0:
+            # 第一关：加载四向贴图
+            self.sprite_3d_colors = self._load_ghost_sprite_3d_multi_direction()
+        else:
+            # 其他关卡：保持原有单贴图逻辑
+            self.sprite_3d_colors = self._load_ghost_sprite_3d()
+        
+        # === 修改：预处理贴图 ===
+        self.original_surface = None # 单贴图使用
+        self.original_surfaces = {}  # 四向贴图使用
         self.preprocess_sprite()
+        
+        self.scaled_cache = {}
         
         # 在迷宫中随机放置幽灵
         self.x, self.y = self._place_in_maze(maze_width, maze_height, maze_grid)
@@ -634,7 +651,11 @@ class Ghost:
         
         # 设置初始随机目标
         self._set_random_target()
-    
+        
+        # 初始化朝向（朝向初始目标）
+        if self.current_target:
+            self.facing_angle = math.atan2(self.current_target[1] - self.y, self.current_target[0] - self.x)
+
     def _create_ghost_sprite_2d(self):
         sprite = [
             [0, 0, 1, 1, 1, 1, 0, 0],
@@ -647,50 +668,78 @@ class Ghost:
             [0, 1, 0, 1, 1, 0, 1, 0]
         ]
         return sprite
-    
+
     def _load_ghost_sprite_3d(self):
+        """加载单张幽灵贴图（其他关卡使用）"""
         try:
             image_path = self.ghost_image_file
-            
             if not os.path.exists(image_path):
                 print(f"第{self.level_index+1}关幽灵图片文件 '{image_path}' 不存在，使用默认贴图")
                 return self._create_default_ghost_sprite_3d_colored()
-            
             ghost_image = pygame.image.load(image_path).convert_alpha()
-            
             if ghost_image.get_width() != 80 or ghost_image.get_height() != 80:
                 ghost_image = pygame.transform.scale(ghost_image, (80, 80))
-            
             sprite_colors = []
-            
             for y in range(80):
                 row_colors = []
                 for x in range(80):
                     pixel_color = ghost_image.get_at((x, y))
                     row_colors.append(pixel_color)
                 sprite_colors.append(row_colors)
-            
             return sprite_colors
-            
         except Exception as e:
             print(f"加载第{self.level_index+1}关幽灵图片失败: {e}")
             return self._create_default_ghost_sprite_3d_colored()
-    
+
+    def _load_ghost_sprite_3d_multi_direction(self):
+        """加载第一关幽灵的四向贴图（前、后、左、右）"""
+        directions = ['front', 'back', 'left', 'right']
+        sprites_data = {}
+        
+        for direction in directions:
+            # 假设文件命名格式为 ghost1_front.png 等
+            image_path = f"png\\ghost1_{direction}.png" 
+            
+            sprite_colors = []
+            try:
+                if os.path.exists(image_path):
+                    ghost_image = pygame.image.load(image_path).convert_alpha()
+                    if ghost_image.get_width() != 80 or ghost_image.get_height() != 80:
+                        ghost_image = pygame.transform.scale(ghost_image, (80, 80))
+                    
+                    for y in range(80):
+                        row_colors = []
+                        for x in range(80):
+                            pixel_color = ghost_image.get_at((x, y))
+                            row_colors.append(pixel_color)
+                        sprite_colors.append(row_colors)
+                    print(f"成功加载第一关幽灵贴图: {direction}")
+                else:
+                    print(f"警告: 第一关幽灵贴图 '{image_path}' 不存在，使用默认贴图")
+                    sprite_colors = self._create_default_ghost_sprite_3d_colored()
+                    
+            except Exception as e:
+                print(f"加载第一关幽灵贴图 {direction} 失败: {e}")
+                sprite_colors = self._create_default_ghost_sprite_3d_colored()
+            
+            sprites_data[direction] = sprite_colors
+            
+        return sprites_data
+
     def _create_default_ghost_sprite_3d_colored(self):
         """创建默认幽灵贴图，根据关卡调整颜色"""
         sprite_colors = [[(0, 0, 0, 0) for _ in range(80)] for _ in range(80)]
-        
         center_x, center_y = 40, 30
         body_radius = 25
         
         # 根据关卡调整颜色强度
-        if self.level_index == 0:  # 第一关
+        if self.level_index == 0:
             base_r, base_g, base_b = 148, 0, 211
-        elif self.level_index == 1:  # 第二关
+        elif self.level_index == 1:
             base_r, base_g, base_b = 128, 0, 191
-        else:  # 第三关
+        else:
             base_r, base_g, base_b = 108, 0, 161
-        
+            
         for y in range(80):
             for x in range(80):
                 dist = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
@@ -709,10 +758,8 @@ class Ghost:
         for x in range(80):
             wave_offset = int(wave_height * math.sin(x * wave_frequency))
             wave_y = base_y + wave_offset
-            
             for y in range(wave_y, min(80, wave_y + 25)):
                 if 0 <= x < 80 and 0 <= y < 80:
-                    # 根据关卡调整波浪颜色
                     if self.level_index == 0:
                         sprite_colors[y][x] = (180, 50, 230, 255)
                     elif self.level_index == 1:
@@ -729,461 +776,370 @@ class Ghost:
             for x in range(80):
                 left_dist = ((x - left_eye_x) ** 2 + (y - eye_y) ** 2) ** 0.5
                 right_dist = ((x - right_eye_x) ** 2 + (y - eye_y) ** 2) ** 0.5
-                
                 if left_dist <= eye_radius or right_dist <= eye_radius:
-                    # 根据关卡调整眼睛颜色
-                    if self.level_index == 2:  # 第三关眼睛更红
+                    if self.level_index == 2:
                         sprite_colors[y][x] = (100, 0, 0, 255)
                     else:
                         sprite_colors[y][x] = (0, 0, 0, 255)
-        
         return sprite_colors
-    
+
     def preprocess_sprite(self):
-        self.original_surface = pygame.Surface((80, 80), pygame.SRCALPHA)
-        
-        for y in range(80):
-            for x in range(80):
-                pixel_color = self.sprite_3d_colors[y][x]
-                if len(pixel_color) == 4 and pixel_color[3] > 0:
-                    self.original_surface.set_at((x, y), pixel_color)
-    
+        """预处理3D贴图，创建Pygame表面"""
+        if self.level_index == 0:
+            # 第一关：处理四向贴图
+            for direction, colors in self.sprite_3d_colors.items():
+                surface = pygame.Surface((80, 80), pygame.SRCALPHA)
+                for y in range(80):
+                    for x in range(80):
+                        pixel_color = colors[y][x]
+                        if len(pixel_color) == 4 and pixel_color[3] > 0:
+                            surface.set_at((x, y), pixel_color)
+                self.original_surfaces[direction] = surface
+        else:
+            # 其他关卡：处理单张贴图
+            self.original_surface = pygame.Surface((80, 80), pygame.SRCALPHA)
+            for y in range(80):
+                for x in range(80):
+                    pixel_color = self.sprite_3d_colors[y][x]
+                    if len(pixel_color) == 4 and pixel_color[3] > 0:
+                        self.original_surface.set_at((x, y), pixel_color)
+
     def _place_in_maze(self, maze_width, maze_height, maze_grid):
         available_positions = []
-        
         for x in range(maze_width):
             for y in range(maze_height):
                 if maze_grid[x, y] == 0:
                     center_x, center_y = maze_width // 2, maze_height // 2
                     if abs(x - center_x) > 3 or abs(y - center_y) > 3:
                         available_positions.append((x + 0.5, y + 0.5))
-        
         if available_positions:
             return random.choice(available_positions)
         else:
             return (maze_width // 2 + 0.5, maze_height // 2 + 0.5)
-    
+
     def _set_random_target(self):
-        """设置一个随机可到达的目标位置"""
         available_positions = []
-        
         for x in range(self.maze_grid.shape[0]):
             for y in range(self.maze_grid.shape[1]):
                 if self.maze_grid[x, y] == 0:
-                    # 确保目标不是当前位置
                     if abs(x - int(self.x)) > 2 or abs(y - int(self.y)) > 2:
                         available_positions.append((x + 0.5, y + 0.5))
-        
         if available_positions:
             self.current_target = random.choice(available_positions)
-            # 计算到随机目标的路径
+            # 更新朝向为新目标
+            dx = self.current_target[0] - self.x
+            dy = self.current_target[1] - self.y
+            if math.sqrt(dx*dx + dy*dy) > 0:
+                self.facing_angle = math.atan2(dy, dx)
+                
             self.current_path = self.pathfinder.find_path((self.x, self.y), self.current_target)
             self.path_index = 0
             self.random_target_timer = pygame.time.get_ticks()
         else:
             self.current_target = None
             self.current_path = []
-    
+
     def _find_path_to_player(self, player_x, player_y):
-        """计算到玩家的路径"""
         self.current_target = (player_x, player_y)
         self.current_path = self.pathfinder.find_path((self.x, self.y), (player_x, player_y))
         self.path_index = 0
         self.repath_timer = pygame.time.get_ticks()
-    
+
     def _follow_path(self, dt):
-        """沿着当前路径移动"""
         if not self.current_path or self.path_index >= len(self.current_path):
             return False
-        
         target_x, target_y = self.current_path[self.path_index]
         
-        # 计算到当前路径点的方向
         dx = target_x - self.x
         dy = target_y - self.y
         distance = math.sqrt(dx*dx + dy*dy)
         
-        if distance < 0.1:  # 到达路径点
+        # === 新增：移动时更新朝向 ===
+        if distance > 0.1:
+            self.facing_angle = math.atan2(dy, dx)
+        
+        if distance < 0.1:
             self.path_index += 1
             if self.path_index >= len(self.current_path):
-                return True  # 到达最终目标
-            return self._follow_path(dt)  # 继续到下一个点
+                return True
+            return self._follow_path(dt)
         
-        # 向路径点移动
         move_x = (dx / distance) * self.current_speed
         move_y = (dy / distance) * self.current_speed
         
-        # 检查碰撞
         new_x = self.x + move_x
         new_y = self.y + move_y
-        
         if not self._check_collision(new_x, new_y):
             self.x = new_x
             self.y = new_y
         else:
-            # 如果碰撞，尝试调整或重新寻路
             self.path_index += 1
-        
         return False
-    
+
     def _check_collision(self, x, y):
-        """检查给定位置是否与墙碰撞"""
         points = [
-            (x, y),
-            (x + self.radius, y),
-            (x - self.radius, y),
-            (x, y + self.radius),
-            (x, y - self.radius),
+            (x, y), (x + self.radius, y), (x - self.radius, y),
+            (x, y + self.radius), (x, y - self.radius),
             (x + self.radius * 0.7, y + self.radius * 0.7),
             (x - self.radius * 0.7, y + self.radius * 0.7),
             (x + self.radius * 0.7, y - self.radius * 0.7),
             (x - self.radius * 0.7, y - self.radius * 0.7)
         ]
-        
         for px, py in points:
             if px < 0 or px >= self.maze_grid.shape[0] or py < 0 or py >= self.maze_grid.shape[1]:
                 return True
             if self.maze_grid[int(px), int(py)] == 1:
                 return True
         return False
-                
+
     def update(self, dt, player_x, player_y):
-        """更新幽灵状态 - 根据墙体阻挡情况智能移动"""
-        # 更新动画
-        self.animation_timer += dt * 1000  # 转换为毫秒
+        self.animation_timer += dt * 1000
         self.wave_offset = math.sin(self.animation_timer * self.animation_speed * 0.001) * 0.1
         
-        # 计算到玩家的距离
         dx = player_x - self.x
         dy = player_y - self.y
         distance_to_player = math.sqrt(dx*dx + dy*dy)
-        
         current_time = pygame.time.get_ticks()
         
-        # 检查幽灵与玩家之间是否有墙体阻挡
         has_wall = self.has_wall_between(self.x, self.y, player_x, player_y)
         
-        # 决定幽灵状态和速度
         if not has_wall:
-            # 无墙体阻挡，幽灵可以看到玩家
-            # 无论距离远近，都以较快速度追踪玩家
             if self.walk_state != "chase":
                 self.walk_state = "chase"
-                self.current_speed = self.fast_speed  # 较快速度
+                self.current_speed = self.fast_speed
                 self._find_path_to_player(player_x, player_y)
             else:
-                # 已经在追踪状态，定期重新计算路径
                 if current_time - self.repath_timer > self.repath_interval:
                     self._find_path_to_player(player_x, player_y)
-        
         else:
-            # 有墙体阻挡
             if distance_to_player < self.chase_radius:
-                # 在追踪范围内，以慢速追踪玩家
                 if self.walk_state != "chase":
                     self.walk_state = "chase"
-                    self.current_speed = self.slow_speed  # 较慢速度
+                    self.current_speed = self.slow_speed
                     self._find_path_to_player(player_x, player_y)
                 else:
-                    # 已经在追踪状态，定期重新计算路径
                     if current_time - self.repath_timer > self.repath_interval:
                         self._find_path_to_player(player_x, player_y)
             else:
-                # 在追踪范围外，随机游走
                 if self.walk_state != "random":
                     self.walk_state = "random"
-                    self.current_speed = self.slow_speed  # 随机游走也用较慢速度
+                    self.current_speed = self.slow_speed
                     self._set_random_target()
                 else:
-                    # 定期更新随机目标
                     if current_time - self.random_target_timer > self.random_target_interval:
                         self._set_random_target()
         
-        # 沿着路径移动
         if self.current_path:
-            reached_target = self._follow_path(dt * 1000)  # dt转换为毫秒
-            
+            reached_target = self._follow_path(dt * 1000)
             if reached_target:
                 if self.walk_state == "random":
                     self._set_random_target()
                 elif self.walk_state == "chase":
-                    # 如果仍在追踪状态，重新计算到玩家的路径
                     if self.walk_state == "chase":
                         self._find_path_to_player(player_x, player_y)
         else:
-            # 如果没有路径，设置新目标
             if self.walk_state == "random":
                 self._set_random_target()
             elif self.walk_state == "chase":
                 self._find_path_to_player(player_x, player_y)
-                
+
     def has_wall_between(self, x1, y1, x2, y2):
-        """
-        检查两点之间是否有墙阻挡
-        x1, y1: 起点坐标
-        x2, y2: 终点坐标
-        返回: True如果有墙阻挡，否则False
-        """
         dx = x2 - x1
         dy = y2 - y1
         distance = math.sqrt(dx*dx + dy*dy)
         if distance == 0:
             return False
-        
-        # 使用射线步进检测
         step_size = 0.1
         steps = int(distance / step_size) + 1
         step_x = dx / steps
         step_y = dy / steps
-        
         for i in range(steps + 1):
             check_x = x1 + step_x * i
             check_y = y1 + step_y * i
-            # 检查点是否在迷宫网格内
             if check_x < 0 or check_x >= self.maze_grid.shape[0] or check_y < 0 or check_y >= self.maze_grid.shape[1]:
                 return True
             if self.maze_grid[int(check_x), int(check_y)] == 1:
                 return True
         return False
-    
+
     def get_relative_position(self, player_x, player_y, player_angle):
-        """获取幽灵相对于玩家的位置（距离和角度）"""
         dx = self.x - player_x
         dy = self.y - player_y
-        
         distance = math.sqrt(dx*dx + dy*dy)
         angle_to_ghost = math.atan2(dy, dx)
         relative_angle = angle_to_ghost - player_angle
-        
         while relative_angle > math.pi:
             relative_angle -= 2 * math.pi
         while relative_angle < -math.pi:
             relative_angle += 2 * math.pi
-            
         return distance, relative_angle
-    
+
     def is_in_fov(self, player_angle, fov_rad):
-        """检查幽灵是否在玩家视野内"""
         if not self.visible:
             return False
-            
         distance, relative_angle = self.get_relative_position(0, 0, player_angle)
-        
-        # 检查是否在视野范围内
         return abs(relative_angle) < fov_rad / 2 and distance < GHOST_MAX_VISIBLE_DISTANCE
-    
+
     def get_screen_position(self, player_x, player_y, player_angle, fov_degrees, screen_width, view_height):
-        """
-        计算幽灵在屏幕上的位置
-        返回：(screen_x, screen_y, size, visible, alpha, screen_width_projection)
-        """
         if not self.visible:
             return 0, 0, 0, False, 0, 0
-        
         distance, relative_angle = self.get_relative_position(player_x, player_y, player_angle)
-        
         if distance > GHOST_MAX_VISIBLE_DISTANCE:
             return 0, 0, 0, False, 0, 0
-        
-        # 将相对角度转换为屏幕x坐标
         fov_rad = math.radians(fov_degrees)
-        
-        # 检查是否在视野内
         if abs(relative_angle) > fov_rad / 2:
             return 0, 0, 0, False, 0, 0
-        
-        # 计算屏幕x坐标（0在最左边，1在最右边）
         screen_x_ratio = 0.5 + (relative_angle / fov_rad)
         screen_x = screen_x_ratio * screen_width
-        
-        # 根据距离计算幽灵大小（透视投影）
         size = int(self.base_3d_size / (distance + 0.5))
-        size = max(50, min(1000, size))  # 限制大小范围
-        
-        # 计算幽灵底部在地板上的位置
+        size = max(50, min(1000, size))
         eye_height = view_height // 2
         projection_factor = view_height * 0.5
         floor_y = eye_height + (projection_factor / distance)
-        
-        # 幽灵的y坐标应该让幽灵底部接触地板
         screen_y = min(view_height, int(floor_y))
-        
-        # 根据距离设置透明度
         alpha = max(120, 255 - int(distance * 8))
-        
-        # 计算幽灵宽度在屏幕上的投影（像素）
         screen_width_projection = (self.width_3d / (distance + 0.5)) * (screen_width / math.tan(fov_rad / 2))
         screen_width_projection = int(max(10, screen_width_projection))
-        
         return screen_x, screen_y, size, True, alpha, screen_width_projection
-        
+
     def draw_2d(self, surface, offset_x, offset_y, cell_size):
-        """在2D视图中绘制幽灵（保持8×8像素画不变）"""
         if not self.visible:
             return
-            
         ghost_screen_x = offset_x + self.x * cell_size
         ghost_screen_y = offset_y + self.y * cell_size
-        
-        # 创建半透明表面
         ghost_surface = pygame.Surface((self.pixel_size * 3, self.pixel_size * 3), pygame.SRCALPHA)
-        
-        # 绘制幽灵像素画（放大3倍以便在2D视图中清晰显示）
         for py in range(self.pixel_size):
             for px in range(self.pixel_size):
                 if self.sprite_2d[py][px] == 1:
-                    # 绘制放大后的像素
                     rect = pygame.Rect(px * 3, py * 3, 3, 3)
                     pygame.draw.rect(ghost_surface, self.color, rect)
-        
-        # 将幽灵绘制到屏幕
         ghost_rect = ghost_surface.get_rect(center=(ghost_screen_x, ghost_screen_y))
         surface.blit(ghost_surface, ghost_rect)
-    
-    def draw_3d_sprite_optimized(self, surface, player_x, player_y, player_angle, fov_degrees, screen_width, view_height, wall_distances, line_width):
-        """
-        优化版本：在3D视图中绘制幽灵精灵，保留墙壁遮挡功能
-        使用图片的实际像素颜色，同时进行部分遮挡检测
-        """
-        # 获取幽灵的屏幕位置、大小、宽度和可见性
+
+    def draw_3d_sprite_optimized(self, surface, player_x, player_y, player_angle, fov_degrees, screen_width, view_height, wall_distances, line_width, pitch_offset=0):
         screen_x, screen_y, ghost_size, ghost_visible, alpha, ghost_screen_width = self.get_screen_position(
             player_x, player_y, player_angle, fov_degrees, screen_width, view_height
         )
-        
         if not ghost_visible or ghost_size < 20:
             return
+        
+        # === 新增：根据朝向选择贴图 ===
+        current_surface = None
+        view_key = 'default'
+        
+        if self.level_index == 0:
+            # 计算玩家相对于幽灵的角度
+            angle_to_player = math.atan2(player_y - self.y, player_x - self.x)
+            
+            # 计算相对角度 (玩家方向 - 幽灵朝向)
+            relative_angle = angle_to_player - self.facing_angle
+            
+            # 归一化到 [-pi, pi]
+            while relative_angle > math.pi: relative_angle -= 2 * math.pi
+            while relative_angle < -math.pi: relative_angle += 2 * math.pi
+            
+            # 判断方向
+            if -math.pi/4 <= relative_angle < math.pi/4:
+                view_key = 'front'
+            elif math.pi/4 <= relative_angle < 3*math.pi/4:
+                view_key = 'left'
+            elif -3*math.pi/4 <= relative_angle < -math.pi/4:
+                view_key = 'right'
+            else:
+                view_key = 'back'
+            
+            current_surface = self.original_surfaces.get(view_key)
+        else:
+            current_surface = self.original_surface
 
-        # 1. 计算幽灵在屏幕上的水平绘制范围
+        if not current_surface:
+            return
+
+        # 计算幽灵在屏幕上的水平绘制范围
         ghost_left_screen = screen_x - ghost_screen_width // 2
         ghost_right_screen = screen_x + ghost_screen_width // 2
         ghost_left_screen = max(0, min(screen_width, ghost_left_screen))
         ghost_right_screen = max(0, min(screen_width, ghost_right_screen))
-
-        # 2. 计算幽灵到玩家的真实距离
+        
         ghost_distance = self.get_distance_to_player(player_x, player_y)
-
         num_samples = 41
-
         sample_points = []
-        visible_columns = []  # 记录哪些列是可见的
+        visible_columns = []
         
         for i in range(num_samples):
-            # 计算采样点在屏幕上的X坐标
             sample_screen_x = ghost_left_screen + (ghost_screen_width * i) / (num_samples - 1)
             sample_screen_x = max(ghost_left_screen, min(ghost_right_screen, sample_screen_x))
-            
-            # 计算该屏幕X坐标对应的射线索引
             ray_idx = int(sample_screen_x / line_width)
             ray_idx = max(0, min(len(wall_distances) - 1, ray_idx))
-            
-            # 获取该射线方向的墙壁距离
             wall_dist_at_sample = wall_distances[ray_idx] if ray_idx < len(wall_distances) else MAX_VIEW_DISTANCE
-            
-            # 判断该采样点是否可见：幽灵距离 < 墙壁距离
             is_visible = ghost_distance < wall_dist_at_sample
-            
-            # 记录采样点和可见性
             sample_points.append((sample_screen_x, is_visible))
-            
-            # 计算这个采样点对应的幽灵列（近似）
             if is_visible:
                 column_pos = (sample_screen_x - ghost_left_screen) / ghost_screen_width
                 column_pos = max(0.0, min(1.0, column_pos))
                 visible_columns.append(column_pos)
         
-        # 如果没有可见列，则不渲染
         if not visible_columns:
             return
         
-        # 4. 创建缩放后的幽灵表面
         scaled_width = int(ghost_screen_width)
         scaled_height = int(ghost_size)
         
-        # 使用缓存的缩放纹理
-        if not hasattr(self, 'scaled_cache'):
-            self.scaled_cache = {}
-        
-        cache_key = (scaled_width, scaled_height, alpha)
+        # 缓存Key加入方向标识
+        cache_key = (scaled_width, scaled_height, alpha, view_key if self.level_index == 0 else 'default')
         if cache_key in self.scaled_cache:
             full_scaled_surface = self.scaled_cache[cache_key]
         else:
-            # 使用pygame内置的缩放函数
-            full_scaled_surface = pygame.transform.scale(self.original_surface, (scaled_width, scaled_height))
-            
-            # 应用距离透明度
+            full_scaled_surface = pygame.transform.scale(current_surface, (scaled_width, scaled_height))
             if alpha < 255:
                 temp_surface = pygame.Surface((scaled_width, scaled_height), pygame.SRCALPHA)
                 temp_surface.blit(full_scaled_surface, (0, 0))
                 temp_surface.set_alpha(alpha)
                 full_scaled_surface = temp_surface
-            
-            # 缓存结果
             self.scaled_cache[cache_key] = full_scaled_surface
         
-        # 5. 清理过期的缓存
         if len(self.scaled_cache) > 10:
             keys_to_remove = list(self.scaled_cache.keys())[:-5]
             for key in keys_to_remove:
                 del self.scaled_cache[key]
         
-        # 6. 应用遮挡效果：创建可见区域的掩码
-        if len(visible_columns) < num_samples:  # 不是所有列都可见
-            # 创建部分遮挡的表面
+        if len(visible_columns) < num_samples:
             final_surface = pygame.Surface((scaled_width, scaled_height), pygame.SRCALPHA)
-            final_surface.fill((0, 0, 0, 0))  # 透明背景
-            
-            # 根据可见列的范围绘制相应部分
-            # 对可见列进行排序并合并连续范围
+            final_surface.fill((0, 0, 0, 0))
             visible_columns.sort()
             visible_ranges = []
-            
             current_start = visible_columns[0]
             current_end = visible_columns[0]
-            
             for col in visible_columns[1:]:
-                if col - current_end < 0.05:  # 合并接近的列
+                if col - current_end < 0.05:
                     current_end = col
                 else:
                     visible_ranges.append((current_start, current_end))
                     current_start = current_end = col
-            
             visible_ranges.append((current_start, current_end))
             
-            # 绘制每个可见范围
             for start_col, end_col in visible_ranges:
-                # 转换为像素坐标
                 start_px = int(start_col * scaled_width)
-                end_px = int(end_col * scaled_width) + 1  # +1确保包含边界
-                
-                # 限制在有效范围内
+                end_px = int(end_col * scaled_width) + 1
                 start_px = max(0, min(scaled_width, start_px))
                 end_px = max(start_px, min(scaled_width, end_px))
-                
                 if start_px < end_px:
-                    # 提取并绘制可见部分
                     visible_portion = full_scaled_surface.subsurface(pygame.Rect(start_px, 0, end_px - start_px, scaled_height))
                     final_surface.blit(visible_portion, (start_px, 0))
         else:
-            # 所有列都可见，使用完整表面
             final_surface = full_scaled_surface
         
-        # 7. 绘制到屏幕上
-        sprite_rect = final_surface.get_rect(midbottom=(screen_x, screen_y))
+        adjusted_screen_y = int(screen_y + pitch_offset)
+        sprite_rect = final_surface.get_rect(midbottom=(screen_x, adjusted_screen_y))
         surface.blit(final_surface, sprite_rect)
-    
+
     def get_distance_to_player(self, player_x, player_y):
-        """计算幽灵到玩家的距离"""
         dx = self.x - player_x
         dy = self.y - player_y
         return math.sqrt(dx*dx + dy*dy)
-    
-    def draw_3d_sprite(self, surface, player_x, player_y, player_angle, fov_degrees, screen_width, view_height, wall_distances, line_width):
-        """
-        在3D视图中绘制幽灵精灵（使用优化版本）
-        这是原始方法的别名，用于保持代码兼容性
-        """
-        self.draw_3d_sprite_optimized(surface, player_x, player_y, player_angle, fov_degrees, 
-                                       screen_width, view_height, wall_distances, line_width)
+
+    def draw_3d_sprite(self, surface, player_x, player_y, player_angle, fov_degrees, screen_width, view_height, wall_distances, line_width, pitch_offset=0):
+        self.draw_3d_sprite_optimized(surface, player_x, player_y, player_angle, fov_degrees, screen_width, view_height, wall_distances, line_width, pitch_offset)
 
 class Key:
     """纯净的钥匙类 - 静态可拾取物品，支持多关卡不同颜色"""
@@ -1591,7 +1547,7 @@ class Key:
                              (glow_radius, glow_radius), glow_radius - i)
             surface.blit(glow_surface, (key_screen_x - glow_radius, key_screen_y - glow_radius))
 
-    def draw_3d_sprite(self, surface, player_x, player_y, player_angle, fov_degrees, screen_width, view_height, wall_distances, line_width):
+    def draw_3d_sprite(self, surface, player_x, player_y, player_angle, fov_degrees, screen_width, view_height, wall_distances, line_width, pitch_offset=0):
         """
         在3D视图中绘制钥匙精灵
         使用独立的绘制逻辑，与幽灵完全分离
@@ -1654,7 +1610,8 @@ class Key:
                 del self.scaled_cache[key]
         
         # 绘制到屏幕上
-        sprite_rect = scaled_surface.get_rect(midbottom=(screen_x, screen_y))
+        adjusted_screen_y = int(screen_y + pitch_offset)
+        sprite_rect = scaled_surface.get_rect(midbottom=(screen_x, adjusted_screen_y))
         surface.blit(scaled_surface, sprite_rect)
         
 class Heart:
@@ -2038,7 +1995,7 @@ class Heart:
                              (glow_radius, glow_radius), glow_radius - i)
             surface.blit(glow_surface, (heart_screen_x - glow_radius, heart_screen_y - glow_radius))
     
-    def draw_3d_sprite(self, surface, player_x, player_y, player_angle, fov_degrees, screen_width, view_height, wall_distances, line_width):
+    def draw_3d_sprite(self, surface, player_x, player_y, player_angle, fov_degrees, screen_width, view_height, wall_distances, line_width, pitch_offset=0):
         """
         在3D视图中绘制爱心精灵
         使用独立的绘制逻辑，与钥匙和幽灵完全分离
@@ -2101,7 +2058,8 @@ class Heart:
                 del self.scaled_cache[key]
         
         # 绘制到屏幕上
-        sprite_rect = scaled_surface.get_rect(midbottom=(screen_x, screen_y))
+        adjusted_screen_y = int(screen_y + pitch_offset)
+        sprite_rect = scaled_surface.get_rect(midbottom=(screen_x, adjusted_screen_y))
         surface.blit(scaled_surface, sprite_rect)
         
         # 绘制爱心的脉动发光效果
@@ -2110,7 +2068,7 @@ class Heart:
             glow_surface = pygame.Surface((scaled_width + 6, scaled_height + 6), pygame.SRCALPHA)
             pygame.draw.ellipse(glow_surface, (255, 150, 150, pulse_alpha), 
                                glow_surface.get_rect())
-            glow_rect = glow_surface.get_rect(center=(screen_x, screen_y - scaled_height // 4))
+            glow_rect = glow_surface.get_rect(center=(screen_x, adjusted_screen_y - scaled_height // 4))
             surface.blit(glow_surface, glow_rect)
 
 class Map:
@@ -2509,7 +2467,7 @@ class Map:
                              (glow_radius, glow_radius), glow_radius - i)
             surface.blit(glow_surface, (map_screen_x - glow_radius, map_screen_y - glow_radius))
 
-    def draw_3d_sprite(self, surface, player_x, player_y, player_angle, fov_degrees, screen_width, view_height, wall_distances, line_width):
+    def draw_3d_sprite(self, surface, player_x, player_y, player_angle, fov_degrees, screen_width, view_height, wall_distances, line_width, pitch_offset=0):
         """
         在3D视图中绘制地图精灵
         使用独立的绘制逻辑，带有旋转效果
@@ -2580,7 +2538,8 @@ class Map:
                 del self.scaled_cache[key]
         
         # 绘制到屏幕上
-        sprite_rect = scaled_surface.get_rect(midbottom=(screen_x, screen_y))
+        adjusted_screen_y = int(screen_y + pitch_offset)
+        sprite_rect = scaled_surface.get_rect(midbottom=(screen_x, adjusted_screen_y))
         surface.blit(scaled_surface, sprite_rect)
         
 class Maze:
@@ -2963,6 +2922,9 @@ class Player:
         self.rotation_speed = 0.05
         
         self.mouse_sensitivity = 0.005  # 鼠标灵敏度，可调整
+        self.pitch_sensitivity = 0.35   # 鼠标Y轴俯仰灵敏度（像素）
+        self.pitch_key_speed = 220      # 键盘俯仰速度（像素/秒）
+        self.pitch = 0.0                # 视角俯仰偏移（像素，+向下，-向上）
         
         # 疾跑控制参数（新增：双击前进键实现疾跑）
         self.is_sprinting = False
@@ -3012,8 +2974,13 @@ class Player:
         self.spawn_x = maze.width // 2 + 0.5
         self.spawn_y = maze.height // 2 + 0.5
         self.spawn_angle = 0
+        self.spawn_pitch = 0.0
         
         print(f"玩家初始化 - 第{self.current_level+1}关，需要收集{self.total_keys_in_level}把钥匙")
+    
+    def get_pitch_limit(self):
+        """根据窗口高度动态计算俯仰偏移上限"""
+        return int(HEIGHT * 0.35)
     
     def check_collision(self, x, y):
         """检查给定位置是否与墙碰撞"""
@@ -3197,6 +3164,7 @@ class Player:
         self.x = self.spawn_x
         self.y = self.spawn_y
         self.angle = self.spawn_angle
+        self.pitch = self.spawn_pitch
         self.is_caught = False  # 重置被抓状态
         
         # 重新生成幽灵到随机位置
@@ -3208,6 +3176,7 @@ class Player:
         self.spawn_x = self.x
         self.spawn_y = self.y
         self.spawn_angle = self.angle
+        self.spawn_pitch = self.pitch
         print(f"重生点更新为: ({self.spawn_x:.1f}, {self.spawn_y:.1f})")
     
     def move_with_collision(self, dx, dy):
@@ -3277,8 +3246,8 @@ class Player:
         # ====================================================================
         current_time = pygame.time.get_ticks()
         
-        # 检查前进键状态
-        forward_pressed = keys[pygame.K_UP] or keys[pygame.K_w]
+        # 检查前进键状态（仅使用W键）
+        forward_pressed = keys[pygame.K_w]
         
         if forward_pressed and not self.forward_key_held:
             # 第一次按下前进键
@@ -3311,7 +3280,7 @@ class Player:
             if abs(actual_dx) > 0.001 or abs(actual_dy) > 0.001:
                 moved = True
                 
-        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+        if keys[pygame.K_s]:
             dx = -math.cos(self.angle) * self.speed
             dy = -math.sin(self.angle) * self.speed
             actual_dx, actual_dy = self.move_with_collision(dx, dy)
@@ -3332,17 +3301,32 @@ class Player:
             if abs(actual_dx) > 0.001 or abs(actual_dy) > 0.001:
                 moved = True
         
-        if self.mouse_control and mouse_rel[0] != 0:
-            self.angle += mouse_rel[0] * self.mouse_sensitivity
-            # 注意：set_pos 需要根据当前屏幕尺寸设置，已在 run 中每帧处理
-            pygame.mouse.set_pos((WIDTH//2, HEIGHT//2))
-        else:
-            if keys[pygame.K_LEFT]:
-                self.angle -= self.rotation_speed
-            if keys[pygame.K_RIGHT]:
-                self.angle += self.rotation_speed
+        # 鼠标控制视角
+        if self.mouse_control:
+            if mouse_rel[0] != 0:
+                self.angle += mouse_rel[0] * self.mouse_sensitivity
+                # 注意：set_pos 需要根据当前屏幕尺寸设置，已在 run 中每帧处理
+                pygame.mouse.set_pos((WIDTH//2, HEIGHT//2))
+            if mouse_rel[1] != 0:
+                # 鼠标上移抬头，下移低头
+                self.pitch -= mouse_rel[1] * self.pitch_sensitivity
+        
+        # 方向键控制视角（左右键控制旋转，上下键控制俯仰）
+        if keys[pygame.K_LEFT]:
+            self.angle -= self.rotation_speed
+        if keys[pygame.K_RIGHT]:
+            self.angle += self.rotation_speed
+        
+        # 键盘俯仰（方向键上下、PageUp/PageDown 与 I/K）- 提高灵敏度
+        pitch_step = self.pitch_key_speed * dt * 1.5  # 提高俯仰灵敏度 50%
+        if keys[pygame.K_UP] or keys[pygame.K_PAGEUP] or keys[pygame.K_i]:
+            self.pitch += pitch_step  # 上键抬头
+        if keys[pygame.K_DOWN] or keys[pygame.K_PAGEDOWN] or keys[pygame.K_k]:
+            self.pitch -= pitch_step  # 下键低头
             
         self.angle %= 2 * math.pi
+        pitch_limit = self.get_pitch_limit()
+        self.pitch = max(-pitch_limit, min(pitch_limit, self.pitch))
         
         # 播放脚步声
         audio_manager.play_step_sound(moved, dt)
@@ -3554,7 +3538,8 @@ class Game:
         print(f"幽灵追踪半径: {LEVEL_GHOST_CHASE_RADIUS[self.current_level]}单位")
         print("控制说明:")
         print("  - WASD/方向键: 移动")
-        print("  - 鼠标: 视角转动（默认启用）")
+        print("  - 鼠标: 视角转动 + 抬头/低头（默认启用）")
+        print("  - PageUp/PageDown 或 I/K: 抬头/低头")
         print("  - 双击前进键(W/↑)并按住第二下: 疾跑")
         print("  - 空格键: 暂停/继续游戏")
         print("  - Ctrl+M: 切换右上角2D缩略图显示")
@@ -4159,13 +4144,28 @@ class Game:
         view_surface = pygame.Surface((screen_width, screen_height))
         
         # 使用当前关卡的天空和地板颜色
-        sky_color = LEVEL_COLORS[self.current_level]['sky']
+        sky_color_top = LEVEL_COLORS[self.current_level]['sky_top']
+        sky_color_bottom = LEVEL_COLORS[self.current_level]['sky_bottom']
         floor_color = LEVEL_COLORS[self.current_level]['floor']
         
-        # 绘制天空和地板（填充整个表面）
-        sky_height = screen_height // 2
-        pygame.draw.rect(view_surface, sky_color, (0, 0, screen_width, sky_height))
-        pygame.draw.rect(view_surface, floor_color, (0, sky_height, screen_width, screen_height - sky_height))
+        # 按俯仰偏移动态设置地平线
+        horizon_y = int(screen_height // 2 + self.player.pitch)
+        horizon_y = max(0, min(screen_height, horizon_y))
+
+        # 绘制天空渐变（地平线以上）
+        sky_height = max(1, horizon_y)
+        for y in range(horizon_y):
+            # 计算渐变因子 (0 到 1)
+            t = y / sky_height if sky_height > 0 else 0
+            # 从顶部颜色渐变到底部颜色
+            r = int(sky_color_top[0] * (1 - t) + sky_color_bottom[0] * t)
+            g = int(sky_color_top[1] * (1 - t) + sky_color_bottom[1] * t)
+            b = int(sky_color_top[2] * (1 - t) + sky_color_bottom[2] * t)
+            
+            pygame.draw.line(view_surface, (r, g, b), (0, y), (screen_width, y))
+        
+        # 绘制地板（保持纯色）
+        pygame.draw.rect(view_surface, floor_color, (0, horizon_y, screen_width, screen_height - horizon_y))
         
         # 检查游戏状态
         if self.is_paused:
@@ -4201,6 +4201,8 @@ class Game:
         """绘制正常游戏状态下的3D视图 - 适应任意尺寸"""
         # 获取射线距离和击中信息
         wall_distances, hit_exits = self.player.get_ray_distances()
+        horizon_y = int(screen_height // 2 + self.player.pitch)
+        horizon_y = max(0, min(screen_height, horizon_y))
         
         # 计算每条射线的线段宽度，基于屏幕宽度
         line_width = screen_width / RAY_COUNT
@@ -4230,7 +4232,7 @@ class Game:
                     color = (r, g, b)
                 
                 # 计算线段的顶部和底部位置
-                wall_top = (screen_height - wall_height) // 2
+                wall_top = int(horizon_y - wall_height / 2)
                 wall_bottom = wall_top + wall_height
                 
                 # 绘制墙壁线段
@@ -4243,7 +4245,8 @@ class Game:
                                           self.player.x, self.player.y, 
                                           self.player.angle, FOV, 
                                           screen_width, screen_height,
-                                          wall_distances, line_width)
+                                          wall_distances, line_width,
+                                          self.player.pitch)
         
         # 3. 绘制所有钥匙（3D视图）
         for key in self.maze.keys:
@@ -4252,7 +4255,8 @@ class Game:
                                   self.player.x, self.player.y,
                                   self.player.angle, FOV,
                                   screen_width, screen_height,
-                                  wall_distances, line_width)
+                                  wall_distances, line_width,
+                                  self.player.pitch)
         
         # 4. 绘制爱心（3D视图）
         if self.maze.heart and not self.maze.heart.collected:
@@ -4260,7 +4264,8 @@ class Game:
                                           self.player.x, self.player.y,
                                           self.player.angle, FOV,
                                           screen_width, screen_height,
-                                          wall_distances, line_width)
+                                          wall_distances, line_width,
+                                          self.player.pitch)
         
         # 5. 绘制地图道具（3D视图）- 新增
         if self.maze.map_item and not self.maze.map_item.collected:
@@ -4268,7 +4273,8 @@ class Game:
                                              self.player.x, self.player.y,
                                              self.player.angle, FOV,
                                              screen_width, screen_height,
-                                             wall_distances, line_width)
+                                             wall_distances, line_width,
+                                             self.player.pitch)
     
     def draw_pause_screen(self, view_surface, screen_width, screen_height):
         """绘制暂停界面"""
@@ -4453,7 +4459,7 @@ class Game:
         print("游戏开始！")
         
         while running:
-            dt = clock.tick(60) / 1000.0  # 转换为秒（刷新率）
+            dt = clock.tick(120) / 1000.0  # 转换为秒（刷新率）
             self.dt = dt
             
             # 处理事件
